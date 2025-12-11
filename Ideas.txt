@@ -1,0 +1,3 @@
+Podemos adicionar um campo sobre o numero do voo sendo ele atuando como uma chave primaria.
+
+Assim evitamos que haja voos duplicados no sistema, e facilitamos na hora de mostrar as pesquisas do dia.
