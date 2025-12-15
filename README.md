@@ -18,6 +18,7 @@
 - [Sobre o Projeto](#-sobre-o-projeto)
 - [Funcionalidades](#-funcionalidades)
 - [Arquitetura](#-arquitetura)
+- [Frontend e Visualização de Dados](#-frontend-e-visualização-de-dados)
 - [Diagrama da Estrutura](#-diagrama-da-estrutura)
 - [Tecnologias Utilizadas](#-tecnologias-utilizadas)
 - [Estrutura do Projeto](#-estrutura-do-projeto)
@@ -164,7 +165,251 @@ graph LR
 
 ---
 
-## 📊 Diagrama da Estrutura
+## � Frontend e Visualização de Dados
+
+### Google Looker Studio Integration
+
+O **FlightOnTime** utiliza o **Google Looker Studio** (anteriormente Google Data Studio) como plataforma de visualização e interface frontend, proporcionando uma experiência rica em análise de dados sem a necessidade de desenvolver uma interface web customizada.
+
+#### 🎯 Por que Looker Studio?
+
+**Looker Studio** é uma poderosa ferramenta de Business Intelligence (BI) e visualização de dados do Google que permite criar dashboards interativos, relatórios dinâmicos e visualizações personalizadas com facilidade. A escolha dessa plataforma traz diversos benefícios:
+
+**Vantagens Principais:**
+
+1. **✨ Zero Custo**: Ferramenta 100% gratuita do Google
+2. **🚀 Desenvolvimento Rápido**: Dashboards prontos em minutos, não semanas
+3. **📊 Visualizações Ricas**: 
+   - Gráficos de linha, barra, pizza, mapas geográficos
+   - Tabelas dinâmicas com filtros interativos
+   - Scorecards para KPIs principais
+   - Mapas de calor para análise temporal
+4. **☁️ Cloud-Native**: Sem necessidade de instalação ou infraestrutura
+5. **🔄 Atualização em Tempo Real**: Dados sempre atualizados automaticamente
+6. **📱 Responsivo**: Funciona perfeitamente em desktop, tablet e mobile
+7. **🔗 Compartilhamento Fácil**: Links públicos ou privados, incorporação em sites
+8. **🔐 Segurança Google**: Controle de acesso via Google Workspace
+
+#### 🔌 Possibilidades de Integração API ↔ Looker Studio
+
+O Looker Studio oferece **múltiplas formas de integração** com nossa API REST:
+
+##### **1. Conectores Nativos do Google**
+
+```mermaid
+graph LR
+    A[API REST<br/>FlightOnTime] -->|JSON| B[Google Sheets]
+    B -->|Conector Nativo| C[Looker Studio]
+    C -->|Dashboard| D[Usuários]
+    
+    style A fill:#6DB33F
+    style B fill:#34A853
+    style C fill:#4285F4
+```
+
+**Fluxo**:
+1. API retorna previsões em formato JSON
+2. Script Google Apps Script captura dados e popula Google Sheets
+3. Looker Studio conecta-se ao Google Sheets como fonte de dados
+4. Dashboards atualizam automaticamente
+
+**Código Apps Script Exemplo**:
+```javascript
+function fetchFlightPredictions() {
+  const url = 'https://api.flightontime.com/api/v1/predict';
+  const payload = {
+    flightNumber: 'AA1234',
+    companyName: 'AA',
+    flightOrigin: 'GIG',
+    flightDestination: 'GRU',
+    flightDepartureDate: new Date().toISOString(),
+    flightDistance: 350
+  };
+  
+  const options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload)
+  };
+  
+  const response = UrlFetchApp.fetch(url, options);
+  const data = JSON.parse(response.getContentText());
+  
+  // Popula Google Sheets
+  const sheet = SpreadsheetApp.getActiveSheet();
+  sheet.appendRow([
+    new Date(),
+    payload.flightNumber,
+    data.prediction,
+    data.probability * 100
+  ]);
+}
+```
+
+##### **2. Community Connectors (Conectores Personalizados)**
+
+Desenvolvimento de **conector customizado** para integração direta:
+
+- **Linguagem**: Google Apps Script (JavaScript)
+- **Autenticação**: OAuth 2.0, API Keys
+- **Vantagens**: 
+  - Conexão direta sem intermediários
+  - Atualização em tempo real
+  - Parâmetros dinâmicos (filtros de data, companhia aérea, etc.)
+
+**Estrutura do Conector**:
+```javascript
+function getConfig() {
+  return {
+    configParams: [
+      {
+        type: 'TEXTINPUT',
+        name: 'apiUrl',
+        displayName: 'FlightOnTime API URL'
+      },
+      {
+        type: 'TEXTINPUT',
+        name: 'apiKey',
+        displayName: 'API Key',
+        secure: true
+      }
+    ]
+  };
+}
+
+function getSchema() {
+  return {
+    schema: [
+      {name: 'flightNumber', dataType: 'STRING'},
+      {name: 'prediction', dataType: 'STRING'},
+      {name: 'probability', dataType: 'NUMBER'},
+      {name: 'timestamp', dataType: 'STRING'}
+    ]
+  };
+}
+
+function getData(request) {
+  const url = request.configParams.apiUrl + '/api/v1/history';
+  const response = UrlFetchApp.fetch(url, {
+    headers: {'Authorization': 'Bearer ' + request.configParams.apiKey}
+  });
+  
+  // Transforma resposta JSON para formato Looker Studio
+  const data = JSON.parse(response.getContentText());
+  return formatData(data, request);
+}
+```
+
+##### **3. BigQuery como Camada Intermediária**
+
+Para cenários com **alto volume de dados**:
+
+```mermaid
+graph LR
+    A[API REST] -->|Streaming| B[BigQuery]
+    B -->|Conector Nativo| C[Looker Studio]
+    C -->|SQL| B
+    
+    style A fill:#6DB33F
+    style B fill:#669DF6
+    style C fill:#4285F4
+```
+
+**Benefícios**:
+- ✅ Consultas SQL poderosas (agregações, JOINs, window functions)
+- ✅ Performance otimizada para grandes volumes (TB de dados)
+- ✅ Histórico completo de previsões
+- ✅ Análises complexas (tendências temporais, sazonalidade)
+
+**Exemplo de Pipeline**:
+```python
+# Backend Python enviando dados para BigQuery
+from google.cloud import bigquery
+
+def save_prediction_to_bigquery(prediction_data):
+    client = bigquery.Client()
+    table_id = "flightontime.predictions.history"
+    
+    rows_to_insert = [{
+        "timestamp": datetime.now().isoformat(),
+        "flight_number": prediction_data["flightNumber"],
+        "prediction": prediction_data["prediction"],
+        "probability": prediction_data["probability"],
+        "origin": prediction_data["origin"],
+        "destination": prediction_data["destination"]
+    }]
+    
+    errors = client.insert_rows_json(table_id, rows_to_insert)
+    if not errors:
+        print("Data inserted successfully")
+```
+
+##### **4. REST API Connector (Beta)**
+
+Google está desenvolvendo conectores REST nativos que permitirão:
+- Conexão direta via URL
+- Autenticação OAuth/API Key
+- Parsing automático de JSON
+- Refresh programado
+
+#### 📊 Dashboards e Casos de Uso
+
+**Dashboards Planejados**:
+
+1. **📈 Dashboard de Previsões em Tempo Real**
+   - Taxa de atrasos (ON_TIME vs DELAYED)
+   - Probabilidade média de atrasos por hora do dia
+   - Top 10 rotas com maior risco de atraso
+   - Mapa de calor: origem × destino × taxa de atraso
+
+2. **📉 Dashboard de Performance do Modelo**
+   - Acurácia do modelo ao longo do tempo
+   - Distribuição de probabilidades
+   - Matriz de confusão (verdadeiros positivos/negativos)
+   - Comparação: previsão vs resultado real
+
+3. **✈️ Dashboard Operacional por Companhia Aérea**
+   - Comparativo de desempenho entre companhias
+   - Análise de pontualidade por aeroporto
+   - Tendências sazonais (feriados, alta temporada)
+   - Análise de distância vs taxa de atraso
+
+4. **🔍 Dashboard Analítico Avançado**
+   - Série temporal de previsões
+   - Correlações (clima, horário, distância)
+   - Insights gerados por IA
+   - Alertas e anomalias
+
+#### 🚀 Roadmap de Integração Looker Studio
+
+**Fase 1: MVP (Q1 2026)**
+- [x] API REST funcional com histórico de previsões
+- [ ] Endpoint `/api/v1/history` para consulta de dados históricos
+- [ ] Google Sheets como fonte de dados inicial
+- [ ] Dashboard básico com métricas principais
+
+**Fase 2: Conector Customizado (Q2 2026)**
+- [ ] Desenvolvimento de Community Connector
+- [ ] Autenticação via API Key
+- [ ] Refresh automático a cada 15 minutos
+- [ ] Filtros dinâmicos (data, companhia, rota)
+
+**Fase 3: BigQuery Enterprise (Q3 2026)**
+- [ ] Pipeline de streaming para BigQuery
+- [ ] Consultas SQL avançadas
+- [ ] Dashboards analíticos completos
+- [ ] Integração com ML do BigQuery para insights preditivos
+
+#### 📚 Recursos e Documentação
+
+- 📖 [Looker Studio - Getting Started](https://support.google.com/looker-studio)
+- 🔌 [Community Connectors Guide](https://developers.google.com/looker-studio/connector)
+- 🎓 [BigQuery Integration Best Practices](https://cloud.google.com/bigquery/docs)
+- 💡 [Looker Studio Gallery](https://lookerstudio.google.com/gallery) - Templates prontos
+
+---
+
+## �📊 Diagrama da Estrutura
 
 ### Estrutura de Pacotes
 
@@ -685,19 +930,23 @@ Trata múltiplos cenários:
 
 #### Funcionalidades Futuras
 
-- [ ] **Front-end com Thymeleaf**
-  - Interface web para testar previsões
-  - Dashboard de estatísticas
+- [ ] **Front-end com Looker Studio** 🎯 *Prioridade Alta*
+  - Dashboard de previsões em tempo real
+  - Análise de performance do modelo
+  - Visualizações interativas de rotas e atrasos
+  - Integration via Google Sheets ou Community Connector
 
 - [ ] **Persistência de Dados**
   - Integração com PostgreSQL
   - Histórico de previsões
   - Auditoria de requisições
+  - Endpoint `/api/v1/history` para consulta de dados históricos
 
-- [ ] **Analytics e BI**
-  - Dashboards com Looker Studio
-  - Métricas de precisão do modelo
-  - Análise de padrões
+- [ ] **BigQuery Integration** 🚀
+  - Pipeline de streaming de previsões
+  - Análises SQL avançadas
+  - Data Lake para analytics
+  - Integração nativa com Looker Studio
 
 - [ ] **Cache e Performance**
   - Redis para cache de previsões
